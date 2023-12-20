@@ -2,133 +2,16 @@
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Threading;
 
 namespace ShutdownTimer
 {
     public partial class MainWindow : Window
     {
-        private DispatcherTimer countdownTimer;
-        private int countdownValue;
+        private CancellationTokenSource cancellationTokenSource;
 
         public MainWindow()
         {
-            try
-            {
-                InitializeComponent();
-                Loaded += MainWindow_Loaded;
-
-                countdownTimer = new DispatcherTimer
-                {
-                    Interval = TimeSpan.FromSeconds(1)
-                };
-                countdownTimer.Tick += CountdownTimer_Tick;
-            }
-            catch (Exception ex)
-            {
-                HandleError("Ошибка при инициализации окна", ex);
-            }
-        }
-
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                int remainingTime = GetRemainingTime();
-
-                UpdateUI(remainingTime);
-
-                // Не запускать таймер выключения при загрузке окна
-            }
-            catch (Exception ex)
-            {
-                HandleError("Ошибка при запуске приложения", ex);
-            }
-        }
-
-        private int GetRemainingTime()
-        {
-            try
-            {
-                return 10; // Замените этот код на ваш запрос к PowerShell
-            }
-            catch (Exception ex)
-            {
-                HandleError("Ошибка при получении оставшегося времени", ex);
-                return 10; // Возвращаем значение по умолчанию в случае ошибки
-            }
-        }
-
-        private void CountdownTimer_Tick(object sender, EventArgs e)
-        {
-            try
-            {
-                countdownValue--;
-
-                if (countdownValue <= 0)
-                {
-                    countdownTimer.Stop();
-                    ShowShutdownWarning();
-                    ResetInterface();
-                }
-
-                UpdateUI(countdownValue);
-            }
-            catch (Exception ex)
-            {
-                HandleError("Ошибка при обновлении обратного отсчета", ex);
-            }
-        }
-
-        private void ResetInterface()
-        {
-            countdownValue = 0;
-            UpdateUI(countdownValue);
-        }
-
-        private void ShowShutdownWarning()
-        {
-            MessageBox.Show("Выключение компьютера было вызвано. Для демонстрации это действие было отключено.", "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-
-        private void CancelShutdownButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                countdownTimer.Stop();
-
-                RunPowerShellCommand("Stop-Computer -Abort");
-
-                ResetInterface();
-            }
-            catch (Exception ex)
-            {
-                HandleError("Ошибка при отмене выключения", ex);
-            }
-        }
-
-        private void RunPowerShellCommand(string command)
-        {
-            // Реализация выполнения команды PowerShell
-        }
-
-        private void UpdateUI(int value)
-        {
-            countdownText.Text = $"{value} минут";
-            timeSlider.Value = value;
-        }
-
-        private void TimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            try
-            {
-                if (selectedTimeText != null)
-                    selectedTimeText.Text = $"{timeSlider.Value} минут";
-            }
-            catch (Exception ex)
-            {
-                HandleError("Ошибка при обновлении текста выбранного времени", ex);
-            }
+            InitializeComponent();
         }
 
         private void ApplyButton_Click(object sender, RoutedEventArgs e)
@@ -143,25 +26,105 @@ namespace ShutdownTimer
                     return;
                 }
 
-                StartCountdown(selectedTime);
+                if (cancellationTokenSource != null)
+                {
+                    MessageBox.Show("Таймер уже запущен", "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
 
-                MessageBox.Show("Таймер запущен. По истечении времени будет выведено предупреждение.", "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
+                cancellationTokenSource = new CancellationTokenSource();
+                UpdateCountdownText(selectedTime); // Добавляем обновление текста сразу
+                StartCountdown(selectedTime);
             }
             catch (Exception ex)
             {
-                HandleError("Ошибка при обработке события кнопки 'Применить'", ex);
+                MessageBox.Show($"Ошибка при обработке события кнопки 'Применить': {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private void StartCountdown(int countdownMinutes)
+        private async void StartCountdown(int countdownMinutes)
         {
-            countdownValue = countdownMinutes;
-            countdownTimer.Start();
+            try
+            {
+                for (int i = countdownMinutes; i >= 0; i--)
+                {
+                    UpdateCountdownText(i);
+                    await Task.Delay(TimeSpan.FromMinutes(1), cancellationTokenSource.Token);
+                }
+
+                MessageBox.Show("Выключение компьютера было вызвано. Для демонстрации это действие было отключено.", "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+                ResetInterface();
+            }
+            catch (TaskCanceledException)
+            {
+                // Таймер отменен пользователем
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при обработке таймера: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
-        private void HandleError(string message, Exception ex)
+        private void CancelShutdownButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show($"{message}: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            try
+            {
+                if (cancellationTokenSource != null)
+                {
+                    cancellationTokenSource.Cancel();
+                    cancellationTokenSource = null;
+                    MessageBox.Show("Таймер выключения отменен", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Таймер не запущен", "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
+                ResetInterface();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при отмене выключения: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
+
+        private void ResetInterface()
+        {
+            cancellationTokenSource = null;
+            timeSlider.Value = 1;
+            countdownText.Text = "Через сколько выключить?";
+        }
+        
+
+        private void UpdateCountdownText(int remainingMinutes)
+        {
+            if (countdownText != null)
+            {
+                string minutesText;
+
+                if (remainingMinutes % 10 == 1 && remainingMinutes % 100 != 11)
+                {
+                    minutesText = "минута";
+                }
+                else if (remainingMinutes % 10 >= 2 && remainingMinutes % 10 <= 4 && (remainingMinutes % 100 < 10 || remainingMinutes % 100 >= 20))
+                {
+                    minutesText = "минуты";
+                }
+                else
+                {
+                    minutesText = "минут";
+                }
+
+                countdownText.Text = $"До выключения {remainingMinutes} {minutesText}";
+            }
+        }
+
+        private void TimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            int selectedTime = (int)timeSlider.Value;
+            UpdateCountdownText(selectedTime);
+        }
+
     }
 }
