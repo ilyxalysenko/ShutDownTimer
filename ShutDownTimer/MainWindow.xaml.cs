@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -14,6 +15,11 @@ namespace ShutdownTimer
             InitializeComponent();
         }
 
+        private void ExecuteShutdownCommand()
+        {
+            // Создание процесса для выполнения команды выключения
+            Process.Start("shutdown", "/s /t 0");
+        }
         private void ApplyButton_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -52,13 +58,12 @@ namespace ShutdownTimer
                     await Task.Delay(TimeSpan.FromMinutes(1), cancellationTokenSource.Token);
                 }
 
-                MessageBox.Show("Выключение компьютера было вызвано. Для демонстрации это действие было отключено.", "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ExecuteShutdownCommand();
 
                 ResetInterface();
             }
             catch (TaskCanceledException)
             {
-                // Таймер отменен пользователем
             }
             catch (Exception ex)
             {
@@ -117,6 +122,8 @@ namespace ShutdownTimer
                 }
 
                 countdownText.Text = $"До выключения {remainingMinutes} {minutesText}";
+
+                timeSlider.Value = remainingMinutes;
             }
         }
 
@@ -124,6 +131,7 @@ namespace ShutdownTimer
         {
             int selectedTime = (int)timeSlider.Value;
             UpdateCountdownText(selectedTime);
+
         }
 
     }
